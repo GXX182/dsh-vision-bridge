@@ -3,7 +3,7 @@ import { analyzeWithGemini } from '../src/gemini.ts'
 import { VisionBridgeError } from '../src/errors.ts'
 
 const image = {
-  path: 'screen.png',
+  source: 'screen.png',
   mediaType: 'image/png' as const,
   bytes: 8,
   dataBase64: 'iVBORw0KGgo=',
@@ -37,14 +37,15 @@ describe('analyzeWithGemini', () => {
       answer: 'A settings dialog.',
       provider: 'google',
       model: 'gemini-test',
-      images: [{ path: 'screen.png', mediaType: 'image/png', bytes: 8 }],
+      images: [{ source: 'screen.png', mediaType: 'image/png', bytes: 8 }],
       truncated: false,
       usage: { promptTokens: 12, completionTokens: 5, totalTokens: 17 },
     })
     expect(fetchImpl).toHaveBeenCalledOnce()
     const [url, init] = fetchImpl.mock.calls[0] ?? []
     expect(url).toBe('https://example.test/v1beta/models/gemini-test:generateContent')
-    expect((init?.headers as Record<string, string>)['x-goog-api-key']).toBe('secret-key')
+    const headers = init?.headers as Record<string, string> | undefined
+    expect(headers?.['x-goog-api-key']).toBe('secret-key')
     const body = JSON.parse(String(init?.body)) as { contents: Array<{ parts: unknown[] }> }
     expect(body.contents[0]?.parts).toContainEqual({
       inline_data: { mime_type: 'image/png', data: 'iVBORw0KGgo=' },

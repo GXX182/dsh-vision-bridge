@@ -1,5 +1,9 @@
 /** Configuration accepted by the Vision Bridge Cordis plugin. */
 export interface Config {
+  /** Provider route registered by this plugin. */
+  bridgeProvider?: string
+  /** Existing text-capable provider route that receives bridged requests. */
+  upstreamProvider?: string
   /** Credential reference resolved for every call. */
   apiKeyEnv?: string
   /** Gemini REST API base URL. */
@@ -29,7 +33,8 @@ export type ResolvedConfig = Required<Config>
 
 /** Image data prepared for one Gemini request. */
 export interface PreparedImage {
-  path: string
+  /** Display-safe path or opaque session-attachment label. */
+  source: string
   mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
   bytes: number
   dataBase64: string
@@ -48,7 +53,7 @@ export interface VisionAnalysis {
   provider: 'google'
   model: string
   images: Array<{
-    path: string
+    source: string
     mediaType: PreparedImage['mediaType']
     bytes: number
   }>

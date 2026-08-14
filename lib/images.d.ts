@@ -27,3 +27,8 @@ export declare function detectImageMediaType(data: Uint8Array): PreparedImage['m
  * @returns validated inline image payloads.
  */
 export declare function loadImages(ctx: Context, paths: readonly string[], exec: ToolRunContext, limits: ImageLimits): Promise<PreparedImage[]>;
+/**
+ * Resolve image references from the current Agent session and read their
+ * verified bytes through the Harness attachment service.
+ */
+export declare function loadSessionImages(ctx: Context, attachmentIds: readonly string[] | undefined, exec: ToolRunContext, limits: ImageLimits): Promise<PreparedImage[]>;

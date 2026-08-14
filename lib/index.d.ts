@@ -11,6 +11,32 @@ export type { VisionAnalysis, VisionUsage } from './types.ts';
 export type Config = VisionBridgeConfig;
 export { VisionBridgeError } from './errors.ts';
 export { TOOL_NAME } from './tool.ts';
+export { DEFAULT_BRIDGE_PROVIDER, VisionBridgeAdapter, bridgeMessages } from './adapter.ts';
+export { maskCredentialValue } from './credential-mask.ts';
+type HostRpcResult = {
+    ok: true;
+    value: unknown;
+} | {
+    ok: false;
+    error: {
+        code: 'bad-request' | 'internal';
+        message: string;
+        details: Record<string, unknown>;
+    };
+};
+interface HostConnectionHandle {
+    rpc: {
+        handle(channel: string, handler: (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<HostRpcResult>, options: {
+            authority: 'loopback' | 'trusted-host';
+        }): () => Promise<void>;
+    };
+}
+declare module '@deepseek-ai/cordis' {
+    interface Context {
+        /** Optional browser transport used only for the credential-mask projection. */
+        connection: HostConnectionHandle;
+    }
+}
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "vision-bridge";
 /** Harness services required by the plugin. */

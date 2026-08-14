@@ -222,7 +222,7 @@ export async function analyzeWithGemini(request: GeminiRequest): Promise<VisionA
       provider: 'google',
       model: request.model,
       images: request.images.map(image => ({
-        path: image.path,
+        source: image.source,
         mediaType: image.mediaType,
         bytes: image.bytes,
       })),

@@ -6,7 +6,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView } from '@deepseek-ai/dsh-tools'
 import { VisionBridgeError } from './errors.ts'
 import { analyzeWithGemini } from './gemini.ts'
-import { loadImages } from './images.ts'
+import { loadImages, loadSessionImages } from './images.ts'
 import type { ResolvedConfig } from './types.ts'
 
 /** Stable tool name presented to native and Code Mode agents. */
@@ -30,7 +30,7 @@ export function registerVisionBridgeTool(ctx: Context, config: ResolvedConfig): 
   const apiKeyRef = credentialRef(config.apiKeyEnv)
   ctx.tools.register(defineTool({
     name: TOOL_NAME,
-    description: 'Analyze local PNG, JPEG, WebP, or GIF images with Gemini and return text-only visual findings. Use this when the active DeepSeek route cannot accept images.',
+    description: 'Analyze PNG, JPEG, WebP, or GIF images from the current Harness session with Gemini and return text-only visual findings. By default use the latest user message containing images; explicit local paths remain available as a fallback.',
     parameters: {
       question: {
         type: 'string',
@@ -39,8 +39,12 @@ export function registerVisionBridgeTool(ctx: Context, config: ResolvedConfig): 
       },
       image_paths: {
         type: 'array',
-        required: true,
-        description: `One to ${config.maxImages} local image paths, resolved from the session workspace.`,
+        description: `Optional one to ${config.maxImages} local image paths, resolved from the session workspace. Omit for conversation attachments.`,
+        items: { type: 'string' },
+      },
+      attachment_ids: {
+        type: 'array',
+        description: `Optional one to ${config.maxImages} opaque attachment ids already referenced by the current session. Omit to use the latest user message containing images.`,
         items: { type: 'string' },
       },
     },
@@ -59,7 +63,7 @@ export function registerVisionBridgeTool(ctx: Context, config: ResolvedConfig): 
               type: 'object',
               additionalProperties: false,
               properties: {
-                path: { type: 'string', required: true },
+                source: { type: 'string', required: true },
                 mediaType: { type: 'string', enum: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], required: true },
                 bytes: { type: 'integer', required: true },
               },
@@ -90,7 +94,12 @@ export function registerVisionBridgeTool(ctx: Context, config: ResolvedConfig): 
       if (credential === undefined) {
         throw new VisionBridgeError('VISION_AUTH', `credential ${config.apiKeyEnv} is not configured`)
       }
-      const images = await loadImages(ctx, args.image_paths, exec, config)
+      if (args.image_paths !== undefined && args.attachment_ids !== undefined) {
+        throw new VisionBridgeError('VISION_INPUT', 'use either image_paths or attachment_ids, not both')
+      }
+      const images = args.image_paths === undefined
+        ? await loadSessionImages(ctx, args.attachment_ids, exec, config)
+        : await loadImages(ctx, args.image_paths, exec, config)
       return analyzeWithGemini({
         apiKey: credential.value,
         baseURL: config.baseURL,
@@ -105,12 +114,16 @@ export function registerVisionBridgeTool(ctx: Context, config: ResolvedConfig): 
       })
     },
     presentCall(args): GenericCallView {
+      const paths = args.image_paths ?? []
+      const count = paths.length > 0 ? paths.length : args.attachment_ids?.length
       return {
         card: 'generic',
-        title: `Analyze ${args.image_paths.length} image${args.image_paths.length === 1 ? '' : 's'}`,
+        title: count === undefined
+          ? 'Analyze conversation images'
+          : `Analyze ${count} image${count === 1 ? '' : 's'}`,
         kind: 'search',
         rawInput: args.question,
-        locations: args.image_paths.map(path => ({ path })),
+        ...paths.length === 0 ? {} : { locations: paths.map(path => ({ path })) },
       }
     },
   }))
