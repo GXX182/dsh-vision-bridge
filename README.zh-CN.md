@@ -50,6 +50,38 @@ dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
 
 建议固定 tag 或 commit。插件代码在 Agent 沙箱之外运行，不应安装不受信任或会移动的分支。
 
+### 使用 `npx` 启动 Harness 的用户
+
+`npx @deepseek-ai/dsh web` 默认读取持久化的 `web` profile，因此插件不会因为 `npx` 下载的临时 CLI 被清理而消失。
+
+安装插件：
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
+```
+
+确认安装版本：
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web list
+```
+
+然后启动 Harness：
+
+```sh
+npx @deepseek-ai/dsh web
+```
+
+插件默认保存在 `~/.dsh/profiles/web`。只要没有修改 `DSH_HOME`，以后每次执行 `npx @deepseek-ai/dsh web` 都会加载这个 profile。
+
+移除插件：
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web remove dsh-vision-bridge
+```
+
+安装时 pnpm 可能提示 Harness 服务包和 React 缺少 peer dependencies。这些包由当前运行的 Harness 发行版提供，仅出现该警告不代表安装失败；可以通过上面的 `list` 命令确认已安装 `dsh-vision-bridge@0.1.0`。
+
 ## 配置
 
 默认配置可直接使用。如需覆盖，在 profile 的 `cordis.patch.yml` 中修改同一个 id。Harness patch 会整体替换 `config`，所以需要完整写出要保留的字段：
@@ -77,6 +109,16 @@ dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
 配置完成后，可随时在 **设置 → 插件 → 插件配置 → 图片理解** 中查看状态、输入新 Key 覆盖旧 Key，或删除凭证。当前 Key 仅以“前 4 位 + `****` + 后 4 位”的脱敏标识显示；脱敏在只允许本机访问的 Host 通道中完成，完整 Key 不会从凭证服务返回给浏览器。
 
 也可以通过 Harness 凭证提供方的其他来源或启动环境设置 `GOOGLE_API_KEY`。工具参数不接受明文 key，插件每次操作都会重新解析凭证引用。当前 Web 弹窗固定管理默认的 `GOOGLE_API_KEY`；如果部署覆盖了 `apiKeyEnv`，需要在弹窗外配置对应的自定义凭证引用。
+
+### 在网页中管理 Google API Key
+
+网页配置管理的是默认 `GOOGLE_API_KEY` 凭证：
+
+- **首次设置：** 在模型选择器中切换到 `DeepSeek + Vision Bridge` 下的模型。缺少 Key 时，在弹窗中输入并点击 **保存并继续**。也可以打开 **设置 → 插件 → 插件配置 → 图片理解**，展开配置卡片，输入 Key 后点击 **保存 API Key**。
+- **更换 Key：** 打开 **设置 → 插件 → 插件配置 → 图片理解**。当前 Key 只显示脱敏标识；在 **Google API Key** 输入框填写新 Key，然后点击 **替换 API Key**。
+- **删除 Key：** 在同一张配置卡片中点击 **删除 Key**，再确认删除。下次切换到 Vision Bridge 模型时，配置弹窗会再次出现。
+
+浏览器不会读取或显示已保存的完整 Key。如果 `GOOGLE_API_KEY` 来自只读凭证提供方或启动环境，网页无法替换或删除它；需要修改对应的凭证来源，并在需要时重启 Harness。
 
 ## 使用
 

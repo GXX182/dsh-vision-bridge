@@ -52,6 +52,38 @@ dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
 
 Pin a tag or commit. A moving branch can change trusted plugin code outside the agent sandbox on the next install.
 
+### Users who start Harness with `npx`
+
+`npx @deepseek-ai/dsh web` reads the persistent `web` profile, so plugins do not disappear when the temporary `npx` CLI download is cleaned up.
+
+Install the plugin:
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
+```
+
+Confirm the installed version:
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web list
+```
+
+Then start Harness:
+
+```sh
+npx @deepseek-ai/dsh web
+```
+
+By default, the plugin is stored under `~/.dsh/profiles/web`. Every later `npx @deepseek-ai/dsh web` invocation loads that profile as long as `DSH_HOME` is unchanged.
+
+Remove the plugin with:
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web remove dsh-vision-bridge
+```
+
+pnpm may report missing peer dependencies for Harness service packages and React during installation. Those packages are supplied by the running Harness distribution; the warning alone does not mean installation failed. Use the `list` command above to confirm that `dsh-vision-bridge@0.1.0` is installed.
+
 ## Configure
 
 The bundle works with schema defaults. Override the inserted row in the profile's `cordis.patch.yml`; a Harness patch replaces the complete `config`, so restate every value you need:
@@ -79,6 +111,16 @@ When you switch to a model under `DeepSeek + Vision Bridge` and `GOOGLE_API_KEY`
 After setup, open **Settings → Plugins → Plugin configuration → Image understanding** to inspect the credential status, replace the key, or remove it. The current key is identified only as its first four characters, `****`, and its final four characters. Masking happens through a loopback-only Host channel; the complete credential is never returned to the browser.
 
 You may instead set `GOOGLE_API_KEY` through another Harness credential-provider source or the launching environment. The tool schema never accepts a literal key, and the plugin resolves the reference for every operation. The browser prompt currently targets the default `GOOGLE_API_KEY` reference; deployments overriding `apiKeyEnv` must configure that custom reference outside the popup.
+
+### Manage the Google API key in the Web UI
+
+The Web controls manage the default `GOOGLE_API_KEY` credential:
+
+- **Set a key:** select a model under `DeepSeek + Vision Bridge`. If the key is missing, enter it in the setup dialog and choose **Save and continue**. You can also open **Settings → Plugins → Plugin configuration → Image understanding**, expand the card, enter the key, and choose **Save API key**.
+- **Replace a key:** open **Settings → Plugins → Plugin configuration → Image understanding**. The current key is shown only as a masked identifier. Enter the replacement in the **Google API Key** field and choose **Replace API key**.
+- **Remove a key:** open the same card, choose **Remove key**, then confirm the removal. The next time you select a Vision Bridge model, the setup dialog appears again.
+
+The complete stored key is never returned to or displayed by the browser. If `GOOGLE_API_KEY` comes from a read-only credential provider or the launch environment, the Web UI cannot replace or remove it; update that source instead and restart Harness when required.
 
 ## Use
 
