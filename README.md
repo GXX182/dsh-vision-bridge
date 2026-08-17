@@ -4,7 +4,7 @@
 
 <h1 align="center">dsh-vision-bridge</h1>
 
-<p align="center"><sub>A vision layer for text-first DeepSeek models</sub></p>
+<p align="center"><sub>A vision layer for text-first models in DeepSeek Harness</sub></p>
 
 <p align="center">
   <a href="./README.zh-CN.md">简体中文</a>
@@ -16,9 +16,9 @@
   <a href="#security">Security</a>
 </p>
 
-`dsh-vision-bridge` is an installable DeepSeek Harness bundle that adds image understanding to text-first model routes. It keeps the normal DeepSeek model list, adds a small glasses control to eligible models, and delegates image analysis to a separately configured vision provider.
+`dsh-vision-bridge` is an installable DeepSeek Harness bundle that adds image understanding to text-first model routes. It preserves the Harness model list, adds a small glasses control to eligible models, and delegates image analysis to a separately configured vision provider.
 
-The plugin supports Gemini-native, OpenAI-compatible Chat Completions/Responses, and Anthropic-compatible Messages APIs. The selected vision provider returns bounded text analysis; image blocks are never forwarded directly to the active DeepSeek model.
+The plugin supports Gemini-native, OpenAI-compatible Chat Completions/Responses, and Anthropic-compatible Messages APIs. The selected vision provider returns bounded text analysis; image blocks are never forwarded directly to the active upstream model.
 
 ## Highlights
 
@@ -45,11 +45,11 @@ The glasses control appears only when a matching bridge route exists and the ups
 
 ## How it works
 
-1. Enable the glasses for an eligible DeepSeek model, then click the model name to select it.
+1. Enable the glasses for an eligible text-first model, then click the model name to select it.
 2. Attach an image and ask a visual question normally.
 3. Harness validates and stores the attachment in the session.
 4. The bridge route replaces image blocks only in the provider-bound request copy with controlled attachment markers. The original session and transcript keep the images.
-5. DeepSeek calls `vision_bridge`; the tool reads the latest session image through Harness attachment services.
+5. The active upstream model calls `vision_bridge`; the tool reads the latest session image through Harness attachment services.
 6. The plugin sends a bounded request to the configured vision provider and returns only its text analysis to the active agent.
 
 Explicit workspace paths remain supported through `image_paths`; they are resolved with Harness filesystem policy.
@@ -58,6 +58,7 @@ Explicit workspace paths remain supported through `image_paths`; they are resolv
 
 - DeepSeek Harness `0.1.0-rc.5` or a compatible `0.1.x` release
 - Node.js `^22.19` or `>=24`
+- An upstream model route that supports Harness tool calls
 - An API key for at least one image-capable endpoint
 
 The backward-compatible default profile uses `GOOGLE_API_KEY`, the Gemini native endpoint, and `gemini-3.6-flash`.

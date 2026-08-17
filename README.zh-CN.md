@@ -4,7 +4,7 @@
 
 <h1 align="center">dsh-vision-bridge</h1>
 
-<p align="center"><sub>为纯文本 DeepSeek 模型补充视觉能力</sub></p>
+<p align="center"><sub>为 DeepSeek Harness 中的文本模型扩展视觉能力</sub></p>
 
 <p align="center">
   <a href="./README.md">English</a>
@@ -16,9 +16,9 @@
   <a href="#安全边界">安全</a>
 </p>
 
-`dsh-vision-bridge` 是一个可安装的 DeepSeek Harness bundle，用来为纯文本模型路由补充图片理解能力。它保留原来的 DeepSeek 模型列表，只在适合桥接的模型右侧增加一个眼镜开关，并把图片分析委托给单独配置的视觉 Provider。
+`dsh-vision-bridge` 是一个可安装的 DeepSeek Harness bundle，用来为文本模型路由补充图片理解能力。它保留 Harness 原有的模型列表，只在适合桥接的模型右侧增加一个眼镜开关，并把图片分析委托给单独配置的视觉 Provider。
 
-插件支持 Gemini 原生协议、OpenAI 兼容的 Chat Completions/Responses，以及 Anthropic 兼容的 Messages API。视觉 Provider 只返回有长度限制的文本分析；图片块不会直接发送给当前 DeepSeek 模型。
+插件支持 Gemini 原生协议、OpenAI 兼容的 Chat Completions/Responses，以及 Anthropic 兼容的 Messages API。视觉 Provider 只返回有长度限制的文本分析；图片块不会直接发送给当前上游模型。
 
 ## 功能亮点
 
@@ -33,23 +33,23 @@
 
 ## 模型选择器规则
 
-| 操作或状态 | 结果 |
-| --- | --- |
-| 灰色眼镜 | 该模型未开启视觉桥接。 |
-| 蓝色眼镜 | 该模型已开启视觉桥接。 |
-| 点击眼镜 | 只切换并记住偏好，不改变当前选中的模型。 |
+| 操作或状态           | 结果                                               |
+| -------------------- | -------------------------------------------------- |
+| 灰色眼镜             | 该模型未开启视觉桥接。                             |
+| 蓝色眼镜             | 该模型已开启视觉桥接。                             |
+| 点击眼镜             | 只切换并记住偏好，不改变当前选中的模型。           |
 | 点击模型名称或模型行 | 选择模型；蓝色时走视觉桥接，灰色时走普通上游路由。 |
-| 悬停眼镜 | 显示负责图片理解的视觉 Provider 和模型。 |
+| 悬停眼镜             | 显示负责图片理解的视觉 Provider 和模型。           |
 
 只有在存在对应桥接路由，并且上游模型是纯文本或图片能力未知时，才会显示眼镜。开关偏好按上游模型保存在本地 Harness 客户端中。
 
 ## 工作原理
 
-1. 为可桥接的 DeepSeek 模型开启眼镜，然后点击模型名称完成选择。
+1. 为可桥接的文本模型开启眼镜，然后点击模型名称完成选择。
 2. 像平常一样附加图片并提出视觉问题。
 3. Harness 校验图片并把附件保存在当前 session 中。
 4. 桥接路由只在发给 Provider 的请求副本中，把图片块替换成受控附件标记；原始 session 和聊天记录仍保留图片。
-5. DeepSeek 调用 `vision_bridge`，工具通过 Harness 附件服务读取最近的会话图片。
+5. 当前上游模型调用 `vision_bridge`，工具通过 Harness 附件服务读取最近的会话图片。
 6. 插件向当前视觉 Provider 发起有边界限制的请求，只把文本分析返回给当前 Agent。
 
 仍然支持显式 `image_paths`；工作区路径通过 Harness 文件系统策略解析。
@@ -58,6 +58,7 @@
 
 - DeepSeek Harness `0.1.0-rc.5` 或兼容的 `0.1.x` 版本
 - Node.js `^22.19` 或 `>=24`
+- 一个支持 Harness 工具调用的上游模型路由
 - 至少一个支持图片输入的服务端点及其 API Key
 
 为了兼容旧配置，默认 Provider 使用 `GOOGLE_API_KEY`、Gemini 原生端点和 `gemini-3.6-flash`。
