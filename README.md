@@ -65,20 +65,20 @@ The backward-compatible default profile uses `GOOGLE_API_KEY`, the Gemini native
 
 ## Install
 
-### From GitHub
+### From npm
 
-Release tags include built `lib/` artifacts:
+Install the latest published release:
 
 ```sh
-dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
+dsh plugin --profile web add dsh-vision-bridge@latest
 ```
 
-Pin a tag or commit. A moving branch can change trusted plugin code outside the agent sandbox on the next install.
+`@latest` follows the newest npm release. Pin an exact version such as `dsh-vision-bridge@0.2.0` when reproducible installs are required.
 
 If Harness is started with `npx`:
 
 ```sh
-npx @deepseek-ai/dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
+npx @deepseek-ai/dsh plugin --profile web add dsh-vision-bridge@latest
 npx @deepseek-ai/dsh plugin --profile web list
 npx @deepseek-ai/dsh web
 ```

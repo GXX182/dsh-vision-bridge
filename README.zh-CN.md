@@ -65,20 +65,20 @@
 
 ## 安装
 
-### 从 GitHub 安装
+### 从 npm 安装
 
-发布标签包含已经构建好的 `lib/`：
+安装 npm 上最新发布的版本：
 
 ```sh
-dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
+dsh plugin --profile web add dsh-vision-bridge@latest
 ```
 
-建议固定 tag 或 commit。移动分支可能在下次安装时改变 Agent 沙箱之外运行的受信任插件代码。
+`@latest` 会跟随 npm 上的最新版本。需要可复现安装时，请固定具体版本，例如 `dsh-vision-bridge@0.2.0`。
 
 如果使用 `npx` 启动 Harness：
 
 ```sh
-npx @deepseek-ai/dsh plugin --profile web add github:GXX182/dsh-vision-bridge#v0.1.0
+npx @deepseek-ai/dsh plugin --profile web add dsh-vision-bridge@latest
 npx @deepseek-ai/dsh plugin --profile web list
 npx @deepseek-ai/dsh web
 ```
