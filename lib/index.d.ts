@@ -1,18 +1,20 @@
 /**
- * DeepSeek Harness plugin that delegates local-image understanding to Gemini
+ * DeepSeek Harness plugin that delegates local-image understanding to a
+ * configured vision API
  * and returns a text-only result to the active agent.
  * @module dsh-vision-bridge
  */
 import type { Context } from '@deepseek-ai/cordis';
 import z from '@deepseek-ai/schemastery';
 import type { Config as VisionBridgeConfig } from './types.ts';
-export type { VisionAnalysis, VisionUsage } from './types.ts';
+export type { VisionAnalysis, VisionApiFormat, VisionUsage } from './types.ts';
 /** Public configuration type paired with the exported Schemastery value. */
 export type Config = VisionBridgeConfig;
 export { VisionBridgeError } from './errors.ts';
 export { TOOL_NAME } from './tool.ts';
 export { DEFAULT_BRIDGE_PROVIDER, VisionBridgeAdapter, bridgeMessages } from './adapter.ts';
 export { maskCredentialValue } from './credential-mask.ts';
+export { detectVisionApiFormat, resolveVisionApiFormat } from './provider.ts';
 type HostRpcResult = {
     ok: true;
     value: unknown;
@@ -39,6 +41,8 @@ declare module '@deepseek-ai/cordis' {
 }
 /** Cordis plugin name used by loader diagnostics. */
 export declare const name = "vision-bridge";
+/** User-settings namespace persisted in `$DSH_HOME/settings.yaml`. */
+export declare const VISION_BRIDGE_SETTINGS_NAMESPACE: import("@deepseek-ai/dsh-settings").SettingsNamespace;
 /** Harness services required by the plugin. */
 export declare const inject: string[];
 /** Schemastery configuration with deployment-safe defaults. */

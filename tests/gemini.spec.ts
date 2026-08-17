@@ -46,6 +46,7 @@ describe('analyzeWithGemini', () => {
     expect(url).toBe('https://example.test/v1beta/models/gemini-test:generateContent')
     const headers = init?.headers as Record<string, string> | undefined
     expect(headers?.['x-goog-api-key']).toBe('secret-key')
+    expect(init?.redirect).toBe('error')
     const body = JSON.parse(String(init?.body)) as { contents: Array<{ parts: unknown[] }> }
     expect(body.contents[0]?.parts).toContainEqual({
       inline_data: { mime_type: 'image/png', data: 'iVBORw0KGgo=' },

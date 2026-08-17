@@ -8,4 +8,4 @@ export declare const TOOL_NAME = "vision_bridge";
  * @param ctx - plugin context carrying tool, filesystem, and credential services.
  * @param config - validated configuration with defaults applied.
  */
-export declare function registerVisionBridgeTool(ctx: Context, config: ResolvedConfig): void;
+export declare function registerVisionBridgeTool(ctx: Context, resolveConfig: () => ResolvedConfig | undefined, fallbackConfig?: ResolvedConfig): void;

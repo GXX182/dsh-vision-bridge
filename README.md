@@ -6,7 +6,7 @@
 
 This is a Harness plugin, not an agent skill. The bundle manifest activates the plugin through `cordis.patch.yml`; the plugin registers the `deepseek-vision-bridge` provider route, the `vision_bridge` tool, and its model guidance through Harness services.
 
-The current release uses Google Gemini as its vision provider. Support for additional image-understanding providers is planned for future releases.
+The plugin supports Gemini-native, OpenAI-compatible Chat Completions/Responses, and Anthropic-compatible Messages APIs. With `apiFormat: auto`, it infers the wire format from the configured Base URL and uses OpenAI compatibility for otherwise ambiguous relay URLs.
 
 ## How it works
 
@@ -14,17 +14,17 @@ The current release uses Google Gemini as its vision provider. Support for addit
 2. Harness validates and stores the images through its attachment service, then records their immutable references in the session.
 3. The bridge provider replaces image blocks only in the upstream request copy with controlled text markers; the durable session and transcript keep the original images.
 4. DeepSeek calls `vision_bridge` with a focused question. With no image arguments, the tool finds the latest user message containing images in the current Agent session and reads them through `ctx.attachments`.
-5. The plugin resolves `GOOGLE_API_KEY` through `ctx.credentials`, sends a bounded request to Gemini, and returns text-only analysis as the canonical tool result.
+5. The plugin resolves the configured credential through `ctx.credentials`, selects the vision wire format from `apiFormat` and `baseURL`, sends a bounded provider request, and returns text-only analysis as the canonical tool result.
 
 Explicit `image_paths` remain supported. Those paths are resolved through `ctx.fs`, preserving the session workspace and filesystem policy.
 
-Images are sent to the configured Google endpoint. They are not sent as image blocks to the active DeepSeek model. Do not use the plugin for images you are not allowed to disclose to that endpoint.
+Images are sent to the configured vision endpoint. They are not sent as image blocks to the active DeepSeek model. Do not use the plugin for images you are not allowed to disclose to that endpoint.
 
 ## Requirements
 
 - DeepSeek Harness `0.1.0-rc.5` or a compatible `0.1.x` release
 - Node.js `^22.19` or `>=24`
-- A `GOOGLE_API_KEY` credential
+- An API-key credential for the configured vision endpoint (`GOOGLE_API_KEY` by default for backward compatibility)
 
 The default model is `gemini-3.6-flash`. See Google's [model documentation](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash) for current availability and input support.
 
@@ -94,6 +94,7 @@ The bundle works with schema defaults. Override the inserted row in the profile'
     bridgeProvider: deepseek-vision-bridge
     upstreamProvider: deepseek-official
     apiKeyEnv: GOOGLE_API_KEY
+    apiFormat: auto
     baseURL: https://generativelanguage.googleapis.com/v1beta
     model: gemini-3.6-flash
     maxImages: 8
@@ -106,21 +107,38 @@ The bundle works with schema defaults. Override the inserted row in the profile'
     timeoutMs: 90000
 ```
 
-When you switch to a model under `DeepSeek + Vision Bridge` and `GOOGLE_API_KEY` is missing, the plugin opens **Configure the vision API key**. Ordinary DeepSeek routes, page startup, and merely opening the model menu do not trigger it. Saving writes the key through the existing `credentials.set` API; the next tool call can use it without restarting the server. Choosing **Configure later** dismisses that prompt; selecting a Vision Bridge model again will prompt while the credential is still missing.
+`apiFormat` accepts `auto`, `gemini-native`, `openai-compatible`, or `anthropic-compatible`. Automatic detection uses complete endpoint paths first, then official hosts and version paths:
 
-After setup, open **Settings → Plugins → Plugin configuration → Image understanding** to inspect the credential status, replace the key, or remove it. The current key is identified only as its first four characters, `****`, and its final four characters. Masking happens through a loopback-only Host channel; the complete credential is never returned to the browser.
+- `:generateContent`, `/v1beta`, or `generativelanguage.googleapis.com` → Gemini native
+- `/v1/messages` or `api.anthropic.com` → Anthropic compatible
+- `/chat/completions` or `/responses` → OpenAI compatible
+- Any other relay URL → OpenAI compatible
 
-You may instead set `GOOGLE_API_KEY` through another Harness credential-provider source or the launching environment. The tool schema never accepts a literal key, and the plugin resolves the reference for every operation. The browser prompt currently targets the default `GOOGLE_API_KEY` reference; deployments overriding `apiKeyEnv` must configure that custom reference outside the popup.
+For example, a typical OpenAI-compatible relay can be configured as:
 
-### Manage the Google API key in the Web UI
+```yaml
+    apiKeyEnv: GOOGLE_API_KEY # legacy reference name; the value may be a relay key
+    apiFormat: auto
+    baseURL: https://relay.example.com/v1
+    model: vision-model
+```
 
-The Web controls manage the default `GOOGLE_API_KEY` credential:
+Set `apiFormat` explicitly when an ambiguous Base URL exposes a non-OpenAI protocol. The plugin does not probe multiple protocols or resend an image after a provider error. A Base URL may also be a complete `/chat/completions`, `/responses`, `/v1/messages`, or `:generateContent` endpoint.
 
-- **Set a key:** select a model under `DeepSeek + Vision Bridge`. If the key is missing, enter it in the setup dialog and choose **Save and continue**. You can also open **Settings → Plugins → Plugin configuration → Image understanding**, expand the card, enter the key, and choose **Save API key**.
-- **Replace a key:** open **Settings → Plugins → Plugin configuration → Image understanding**. The current key is shown only as a masked identifier. Enter the replacement in the **Google API Key** field and choose **Replace API key**.
-- **Remove a key:** open the same card, choose **Remove key**, then confirm the removal. The next time you select a Vision Bridge model, the setup dialog appears again.
+Open **Settings → Plugins → Plugin configuration → Image understanding** to manage vision providers. A provider combines a custom display name, Base URL, API format, and its own API key. Adding one first verifies its model-list endpoint, stores the key in the Harness credential store, saves the provider directory in `$DSH_HOME/settings.yaml`, selects it, and loads its models. Changes apply live.
 
-The complete stored key is never returned to or displayed by the browser. If `GOOGLE_API_KEY` comes from a read-only credential provider or the launch environment, the Web UI cannot replace or remove it; update that source instead and restart Harness when required.
+The provider picker shows each custom name together with the key's masked first and final characters. Its delete control appears when an option is hovered or keyboard-focused. Selecting another provider automatically reloads that provider's models; changing the model updates only that provider. This keeps keys, endpoints, and model choices isolated across multiple relays.
+
+The complete stored key is never returned to the browser. Masking and model discovery happen Host-side through loopback-only calls, and a model-list request goes only to the selected provider's configured Base URL. The original `GOOGLE_API_KEY` configuration remains as the default provider for backward compatibility.
+
+### Manage providers in the Web UI
+
+- **Add:** choose **Add provider**, then enter a name, Base URL, API format, and key. Auto detect is the usual choice. The provider is added only after its model directory succeeds.
+- **Switch:** open the provider picker and select an option. Its model list loads automatically.
+- **Choose a model:** use the model dropdown; there is no free-form model field.
+- **Delete:** hover or focus a provider option and use the delete button at its right edge. The provider entry and its managed credential are removed together.
+
+When the provider list is empty, setup appears only if the current conversation selects a model under `DeepSeek + Vision Bridge`; a new conversation using an ordinary model does not prompt. A provider can be added directly in the prompt and becomes usable after its model directory is verified.
 
 ## Use
 
@@ -158,11 +176,10 @@ The prompt prefix is stable while plugin configuration and visible tool composit
 
 ## Known Limitations and Deferred Work
 
-- Google Gemini is the only vision provider in the current release. Additional providers and provider-selection configuration are planned.
+- Automatic detection intentionally defaults unknown Base URLs to OpenAI compatibility. Use the explicit `apiFormat` override for ambiguous Anthropic or Gemini relays.
 - The ordinary `deepseek-official` provider remains text-only. Users must select the separately registered `DeepSeek + Vision Bridge` route for conversation attachments.
-- The browser prompt currently recognizes the default `deepseek-vision-bridge` provider id. Deployments overriding `bridgeProvider` must configure the credential through Settings or another credential source.
 - The bridge route delegates to the configured upstream route through the public LLM service. Harness `llm/stream` middleware therefore observes both the bridge request and its delegated upstream request; deployments with custom middleware should test their accounting and policy expectations.
-- Gemini receives image bytes inline. File/video upload APIs and remote image URLs are not supported.
+- Provider requests carry image bytes inline. File/video upload APIs and remote image URLs are not supported.
 - The plugin returns the provider's text analysis; it does not independently verify OCR, measurements, or safety-critical conclusions.
 
 ## Development

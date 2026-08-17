@@ -33,6 +33,8 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt, { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import { SettingsProvider } from '@deepseek-ai/dsh-settings'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as VisionBridge from '../src/index.ts'
@@ -62,6 +64,20 @@ class MemoryCredentials extends CredentialProvider {
 
   override unset(_ref: CredentialRef): Promise<void> {
     return Promise.reject(new Error('read-only test credential provider'))
+  }
+}
+
+class MemorySettings extends SettingsProvider {
+  readonly writable = true
+  private stored: Record<string, unknown> = {}
+
+  protected override load(): Promise<Record<string, unknown>> {
+    return Promise.resolve(structuredClone(this.stored))
+  }
+
+  protected override persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.stored = { ...this.stored, [ns]: structuredClone(section) }
+    return Promise.resolve()
   }
 }
 
@@ -158,6 +174,7 @@ async function setup(): Promise<{ ctx: Context; upstream: MemoryUpstreamAdapter 
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(MemoryFileSystem)
   await ctx.plugin(MemoryCredentials)
+  await ctx.plugin(MemorySettings)
   await ctx.plugin(MemoryAttachments)
   return { ctx, upstream }
 }
@@ -279,5 +296,58 @@ describe('Vision Bridge Cordis plugin', () => {
     expect(ctx.tools.get('vision_bridge')).toBeUndefined()
     expect(ctx.llm.listProviders().map(provider => provider.id)).not.toContain(VisionBridge.DEFAULT_BRIDGE_PROVIDER)
     expect(renderPrompt(await ctx.systemPrompt.assemble())).not.toContain('Call vision_bridge')
+  })
+
+  it('applies a persisted provider selection live to the next tool call', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({
+      choices: [{ message: { content: 'Relay result.' } }],
+    }), { status: 200 })))
+    vi.stubGlobal('fetch', fetchImpl)
+    const { ctx } = await setup()
+    const fiber = ctx.plugin(VisionBridge)
+    await fiber
+
+    await ctx.settings.update(VisionBridge.VISION_BRIDGE_SETTINGS_NAMESPACE, {
+      activeProviderId: 'team-relay',
+      providers: [{
+        id: 'team-relay',
+        name: 'Team relay',
+        apiKeyEnv: 'VISION_BRIDGE_TEAM_RELAY_API_KEY',
+        apiFormat: 'openai-compatible',
+        baseURL: 'https://relay.example.com/v1',
+        model: 'relay-vision',
+      }],
+    })
+
+    const result = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: CallId('vision-live-settings'),
+      name: 'vision_bridge',
+      arguments: { question: 'What is visible?', image_paths: ['screen.png'] },
+    })
+    expect(result).toMatchObject({
+      isError: false,
+      value: { answer: 'Relay result.', model: 'relay-vision', provider: 'openai-compatible' },
+    })
+    expect(fetchImpl).toHaveBeenCalledWith('https://relay.example.com/v1/chat/completions', expect.objectContaining({
+      method: 'POST',
+    }))
+
+    await ctx.settings.update(VisionBridge.VISION_BRIDGE_SETTINGS_NAMESPACE, {
+      activeProviderId: '',
+      providers: [],
+    })
+    const missing = await ctx.tools.execute({
+      signal: new AbortController().signal,
+      callId: CallId('vision-no-provider'),
+      name: 'vision_bridge',
+      arguments: { question: 'What is visible?', image_paths: ['screen.png'] },
+    })
+    expect(missing).toMatchObject({
+      isError: true,
+      error: { message: expect.stringContaining('no vision provider is configured') },
+    })
+
+    await fiber.dispose()
   })
 })
