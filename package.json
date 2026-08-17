@@ -21,6 +21,7 @@
     "lib/**/*.cjs",
     "lib/**/*.cjs.map",
     "lib/**/*.d.ts",
+    "assets/glasses.svg",
     "cordis.patch.yml",
     "README.md",
     "README.zh-CN.md",

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="72" viewBox="0 0 128 72" role="img" aria-labelledby="title description">
+  <title id="title">Vision Bridge glasses</title>
+  <desc id="description">A minimal blue gradient eyeglasses icon.</desc>
+  <defs>
+    <linearGradient id="stroke" x1="16" y1="10" x2="112" y2="62" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#91A7FF"/>
+      <stop offset="0.52" stop-color="#5B7CFA"/>
+      <stop offset="1" stop-color="#3370FF"/>
+    </linearGradient>
+  </defs>
+  <g fill="none" stroke="url(#stroke)" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M15.5 31 22.5 10.5M112.5 31l-7-20.5M54.5 32c4.5-3 14.5-3 19 0"/>
+    <circle cx="39.5" cy="43" r="18.5"/>
+    <circle cx="88.5" cy="43" r="18.5"/>
+  </g>
+</svg>
