@@ -460,7 +460,7 @@ export interface BridgeDisplayGroup extends Omit<ModelProviderGroupView, 'models
   models: BridgeDisplayModel[]
 }
 
-/** Hide the duplicated bridge group and decorate its upstream model rows instead. */
+/** Hide the shared bridge group and decorate every matching upstream model row instead. */
 export function foldBridgeModelGroups(
   groups: readonly ModelProviderGroupView[],
   routing: VisionBridgeRoutingView | undefined,
@@ -469,15 +469,16 @@ export function foldBridgeModelGroups(
   const bridgeModels = new Map(
     groups.find(group => group.id === routing.bridgeProvider)?.models.map(model => [model.id, model]) ?? [],
   )
-  const routingModels = new Map(routing.models.map(model => [model.id, model]))
+  const routes = new Map(routing.routes.map(route => [route.upstreamProvider, route]))
   return groups
     .filter(group => group.id !== routing.bridgeProvider)
     .map(group => ({
       ...group,
       models: group.models.map(model => {
-        if (group.id !== routing.upstreamProvider) return { ...model }
-        const bridgeModel = bridgeModels.get(model.id)
-        const routingModel = routingModels.get(model.id)
+        const route = routes.get(group.id)
+        if (route === undefined) return { ...model }
+        const routingModel = route.models.find(item => item.id === model.id)
+        const bridgeModel = routingModel === undefined ? undefined : bridgeModels.get(routingModel.bridgeModelId)
         return {
           ...model,
           ...(bridgeModel === undefined ? {} : { bridgeModel }),
@@ -494,10 +495,32 @@ export function providerForModelPreference(
   model: BridgeDisplayModel,
   routing: VisionBridgeRoutingView | undefined,
 ): string {
-  return routing !== undefined && groupProvider === routing.upstreamProvider
+  return routing !== undefined && routing.routes.some(route => route.upstreamProvider === groupProvider)
     && model.bridgeModel !== undefined && model.nativeVision !== 'native' && model.bridgeEnabled === true
     ? routing.bridgeProvider
     : groupProvider
+}
+
+interface LogicalModelSelection {
+  provider?: string
+  model?: string
+  bridge: boolean
+}
+
+/** Project an opaque bridge selection back onto the provider/model row shown to the user. */
+export function logicalModelSelection(
+  selection: ModelDirectorySnapshot['current'],
+  routing: VisionBridgeRoutingView | undefined,
+): LogicalModelSelection {
+  if (selection === null) return { bridge: false }
+  if (routing === undefined || selection.provider !== routing.bridgeProvider) {
+    return { provider: selection.provider, model: selection.model, bridge: false }
+  }
+  for (const route of routing.routes) {
+    const model = route.models.find(item => item.bridgeModelId === selection.model)
+    if (model !== undefined) return { provider: route.upstreamProvider, model: model.id, bridge: true }
+  }
+  return { bridge: true }
 }
 
 function GlassesIcon(): ReactNode {
@@ -564,12 +587,15 @@ const BRIDGE_PREFERENCE_STORAGE_PREFIX = 'dsh-vision-bridge.bridge-models.v1:'
 /** Overlay browser-local glasses preferences without touching the Host model configuration. */
 export function withBridgePreferences(
   routing: VisionBridgeRoutingView,
+  upstreamProvider: string,
   enabledModels: readonly string[],
 ): VisionBridgeRoutingView {
   const enabled = new Set(enabledModels)
   return {
     ...routing,
-    models: routing.models.map(model => ({ ...model, bridgeEnabled: enabled.has(model.id) })),
+    routes: routing.routes.map(route => route.upstreamProvider === upstreamProvider
+      ? { ...route, models: route.models.map(model => ({ ...model, bridgeEnabled: enabled.has(model.id) })) }
+      : route),
   }
 }
 
@@ -578,22 +604,28 @@ function preferenceStorageKey(upstreamProvider: string): string {
 }
 
 function readBridgePreferences(routing: VisionBridgeRoutingView): VisionBridgeRoutingView {
-  try {
-    const raw = window.localStorage.getItem(preferenceStorageKey(routing.upstreamProvider))
-    if (raw === null) return routing
-    const value: unknown = JSON.parse(raw)
-    if (!Array.isArray(value) || value.length > 1_000
-      || value.some(model => typeof model !== 'string' || model.length === 0 || model.length > 300)) return routing
-    return withBridgePreferences(routing, value as string[])
-  } catch {
-    return routing
+  let next = routing
+  for (const route of routing.routes) {
+    try {
+      const raw = window.localStorage.getItem(preferenceStorageKey(route.upstreamProvider))
+      if (raw === null) continue
+      const value: unknown = JSON.parse(raw)
+      if (!Array.isArray(value) || value.length > 1_000
+        || value.some(model => typeof model !== 'string' || model.length === 0 || model.length > 300)) continue
+      next = withBridgePreferences(next, route.upstreamProvider, value as string[])
+    } catch {
+      // Keep this provider's server preference when browser storage is unavailable.
+    }
   }
+  return next
 }
 
-function writeBridgePreferences(routing: VisionBridgeRoutingView): void {
+function writeBridgePreferences(routing: VisionBridgeRoutingView, upstreamProvider: string): void {
   try {
-    const enabledModels = routing.models.filter(model => model.bridgeEnabled).map(model => model.id)
-    window.localStorage.setItem(preferenceStorageKey(routing.upstreamProvider), JSON.stringify(enabledModels))
+    const route = routing.routes.find(item => item.upstreamProvider === upstreamProvider)
+    if (route === undefined) return
+    const enabledModels = route.models.filter(model => model.bridgeEnabled).map(model => model.id)
+    window.localStorage.setItem(preferenceStorageKey(upstreamProvider), JSON.stringify(enabledModels))
   } catch {
     // Keep the in-memory preference when browser storage is unavailable.
   }
@@ -621,10 +653,11 @@ export function VisionBridgeModelSelect({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const copy = modelCopy()
   const groups = useMemo(() => foldBridgeModelGroups(state.groups ?? [], routing), [routing, state.groups])
-  const currentIsBridge = routing !== undefined && state.current?.provider === routing.bridgeProvider
-  const logicalCurrentProvider = currentIsBridge ? routing.upstreamProvider : state.current?.provider
+  const logicalCurrent = logicalModelSelection(state.current, routing)
+  const currentIsBridge = logicalCurrent.bridge
+  const logicalCurrentProvider = logicalCurrent.provider
   const currentGroup = groups.find(group => group.id === logicalCurrentProvider)
-  const currentModel = currentGroup?.models.find(model => model.id === state.current?.model)
+  const currentModel = currentGroup?.models.find(model => model.id === logicalCurrent.model)
   const currentReasoning = currentIsBridge ? currentModel?.bridgeModel?.reasoning : currentModel?.reasoning
   const effectiveEffort = state.current?.reasoningEffort ?? currentReasoning?.defaultEffort
   const effortLabel = effectiveEffort === undefined
@@ -687,19 +720,18 @@ export function VisionBridgeModelSelect({
   }
 
   const selectionFor = (
+    groupProvider: string,
     provider: string,
     model: BridgeDisplayModel,
     reasoning = model.reasoning,
   ): ModelSelectionView => {
-    const sameLogicalModel = logicalCurrentProvider === (provider === routing?.bridgeProvider
-      ? routing.upstreamProvider
-      : provider) && state.current?.model === model.id
+    const sameLogicalModel = logicalCurrentProvider === groupProvider && logicalCurrent.model === model.id
     const reasoningEffort = sameLogicalModel
       ? state.current?.reasoningEffort
       : reasoning?.defaultEffort
     return {
       provider,
-      model: model.id,
+      model: provider === routing?.bridgeProvider ? model.bridgeModel?.id ?? model.id : model.id,
       ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     }
   }
@@ -785,7 +817,7 @@ export function VisionBridgeModelSelect({
             aria-label={group.name}>
             <div className="dsh-vb-model-group-title">{group.name}</div>
             {group.models.map(model => {
-              const selected = logicalCurrentProvider === group.id && state.current?.model === model.id
+              const selected = logicalCurrentProvider === group.id && logicalCurrent.model === model.id
               const bridgeAvailable = model.bridgeModel !== undefined && model.nativeVision !== 'native'
               const bridgeEnabled = bridgeAvailable && model.bridgeEnabled === true
               const glassesAction = bridgeEnabled
@@ -800,7 +832,7 @@ export function VisionBridgeModelSelect({
                   onClick={() => {
                     const provider = providerForModelPreference(group.id, model, routing)
                     const reasoning = bridgeEnabled ? model.bridgeModel?.reasoning : model.reasoning
-                    void choose(selectionFor(provider, model, reasoning))
+                    void choose(selectionFor(group.id, provider, model, reasoning))
                   }}>
                   <span className="dsh-vb-model-copy">
                     <span className="dsh-vb-model-name">{model.name}</span>
@@ -817,11 +849,13 @@ export function VisionBridgeModelSelect({
                     if (routing === undefined || model.bridgeModel === undefined) return
                     const enabled = !bridgeEnabled
                     setLocalError(undefined)
-                    const nextRouting = withBridgePreferences(routing, routing.models
+                    const route = routing.routes.find(item => item.upstreamProvider === group.id)
+                    if (route === undefined) return
+                    const nextRouting = withBridgePreferences(routing, group.id, route.models
                       .filter(item => item.id === model.id ? enabled : item.bridgeEnabled)
                       .map(item => item.id))
                     setRouting(nextRouting)
-                    writeBridgePreferences(nextRouting)
+                    writeBridgePreferences(nextRouting, group.id)
                   }}><GlassesIcon /></button> : null}
                 <span className="dsh-vb-model-check">{selected ? <CheckIcon /> : null}</span>
               </div>

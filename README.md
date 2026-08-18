@@ -23,6 +23,7 @@ The plugin supports Gemini-native, OpenAI-compatible Chat Completions/Responses,
 ## Highlights
 
 - **One model list:** Vision Bridge no longer appears as a duplicated provider group.
+- **All provider groups:** Every registered provider is eligible; text-only and unknown-capability models receive their own bridge toggle.
 - **Per-model glasses toggle:** Gray means the bridge preference is off; blue means it is on.
 - **Selection stays explicit:** Clicking the glasses only changes the preference. Clicking the model name selects the model and applies that preference.
 - **Persistent without model churn:** Glasses preferences are remembered in the Harness web client without triggering a model switch or model-directory refresh.
@@ -41,7 +42,7 @@ The plugin supports Gemini-native, OpenAI-compatible Chat Completions/Responses,
 | Click model name/row | Select the model. Blue routes through Vision Bridge; gray uses the normal upstream route. |
 | Hover glasses | Show the vision provider and model that will perform image understanding. |
 
-The glasses control appears only when a matching bridge route exists and the upstream model is text-only or has unknown image capability. The preference is stored per upstream model in the local Harness client.
+The glasses control appears in every provider group when the upstream model is text-only or has unknown image capability. The preference is stored per provider/model pair in the local Harness client, so identical model ids from different providers remain independent.
 
 ## How it works
 
@@ -73,7 +74,7 @@ Install the highest semantic-version release tag:
 dsh plugin --profile web add "github:GXX182/dsh-vision-bridge#semver:*"
 ```
 
-`#semver:*` selects the newest matching GitHub version tag. Pin an exact tag such as `#v0.2.0` when reproducible installs are required.
+`#semver:*` selects the newest matching GitHub version tag. Pin an exact tag such as `#v0.2.2` when reproducible installs are required.
 
 If Harness is started with `npx`:
 
@@ -131,7 +132,7 @@ Set the format explicitly when an ambiguous relay uses Gemini or Anthropic seman
 
 ## Advanced bundle configuration
 
-The schema defaults work without editing the patch. To override them, replace the inserted row's complete `config` in the profile `cordis.patch.yml`:
+The schema defaults work without editing the patch. `upstreamProvider` is now only the legacy/default route used to preserve existing model ids and sessions; all registered providers are discovered automatically. To override the defaults, replace the inserted row's complete `config` in the profile `cordis.patch.yml`:
 
 ```yaml
 - id: vision-bridge

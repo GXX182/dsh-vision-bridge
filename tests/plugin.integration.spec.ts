@@ -138,10 +138,11 @@ class MemoryUpstreamAdapter extends LlmAdapter {
   readonly calls: GenerateOptions[] = []
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
+    const team = provider === 'teamrouter'
     return Promise.resolve([{
       provider,
-      id: 'deepseek-v4-flash',
-      name: 'DeepSeek V4 Flash',
+      id: team ? 'claude-opus-5' : 'deepseek-v4-flash',
+      name: team ? 'Claude Opus 5' : 'DeepSeek V4 Flash',
       inputModalities: ['text'],
     }])
   }
@@ -150,7 +151,7 @@ class MemoryUpstreamAdapter extends LlmAdapter {
     return Promise.resolve({
       provider,
       id: model,
-      name: 'DeepSeek V4 Flash',
+      name: provider === 'teamrouter' ? 'Claude Opus 5' : 'DeepSeek V4 Flash',
       inputModalities: ['text'],
       context: { contextWindow: 128_000 },
     })
@@ -169,7 +170,7 @@ async function setup(): Promise<{ ctx: Context; upstream: MemoryUpstreamAdapter 
   contexts.push(ctx)
   await ctx.plugin(LlmRuntime)
   const upstream = new MemoryUpstreamAdapter()
-  ctx.llm.registerAdapter(['deepseek-official'], upstream)
+  ctx.llm.registerAdapter(['deepseek-official', 'teamrouter'], upstream)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(MemoryFileSystem)
@@ -229,8 +230,16 @@ describe('Vision Bridge Cordis plugin', () => {
     expect(ctx.tools.schemas().map(tool => tool.name)).toContain('vision_bridge')
     expect(ctx.llm.listProviders()).toContainEqual({
       id: VisionBridge.DEFAULT_BRIDGE_PROVIDER,
-      name: 'DeepSeek + Vision Bridge',
+      name: 'Vision Bridge',
     })
+    await expect(ctx.llm.listModels(VisionBridge.DEFAULT_BRIDGE_PROVIDER)).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'deepseek-v4-flash' }),
+      expect.objectContaining({ id: VisionBridge.routedBridgeModelId('teamrouter', 'claude-opus-5') }),
+    ]))
+    await expect(ctx.llm.resolveModelInfo(
+      VisionBridge.DEFAULT_BRIDGE_PROVIDER,
+      VisionBridge.routedBridgeModelId(VisionBridge.DEFAULT_BRIDGE_PROVIDER, 'recursive-model'),
+    )).rejects.toThrow('cannot target the bridge provider')
     await expect(ctx.llm.resolveModelInfo(
       VisionBridge.DEFAULT_BRIDGE_PROVIDER,
       'deepseek-v4-flash',
@@ -260,6 +269,25 @@ describe('Vision Bridge Cordis plugin', () => {
       text: expect.stringContaining('attachment_id="session-image-1"'),
     }])
     expect(message.content[0]).toMatchObject({ type: 'image', attachment: ATTACHMENT })
+
+    const teamrouterModel = VisionBridge.routedBridgeModelId('teamrouter', 'claude-opus-5')
+    await expect(ctx.llm.resolveModelInfo(
+      VisionBridge.DEFAULT_BRIDGE_PROVIDER,
+      teamrouterModel,
+    )).resolves.toMatchObject({
+      provider: VisionBridge.DEFAULT_BRIDGE_PROVIDER,
+      id: teamrouterModel,
+      name: 'Claude Opus 5 (Vision Bridge)',
+    })
+    for await (const _chunk of ctx.llm.stream({
+      provider: VisionBridge.DEFAULT_BRIDGE_PROVIDER,
+      model: teamrouterModel,
+      messages: [message],
+      signal: new AbortController().signal,
+    })) {
+      // Consume the routed provider request.
+    }
+    expect(upstream.calls[1]).toMatchObject({ provider: 'teamrouter', model: 'claude-opus-5' })
 
     const result = await ctx.tools.execute({
       signal: new AbortController().signal,

@@ -12,7 +12,7 @@ export type ResolvedVisionApiFormat = Exclude<VisionApiFormat, 'auto'>
 export interface Config {
   /** Provider route registered by this plugin. */
   bridgeProvider?: string
-  /** Existing text-capable provider route that receives bridged requests. */
+  /** Legacy/default upstream retained for stable existing model ids and sessions. */
   upstreamProvider?: string
   /** Credential reference resolved for every call. */
   apiKeyEnv?: string

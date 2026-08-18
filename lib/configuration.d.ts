@@ -55,18 +55,23 @@ export interface VisionModelsView {
 export type NativeVisionCapability = 'native' | 'unsupported' | 'unknown';
 export interface VisionBridgeRoutingModelView {
     id: string;
+    /** Opaque model id exposed by the shared bridge provider route. */
+    bridgeModelId: string;
     nativeVision: NativeVisionCapability;
     bridgeEnabled: boolean;
 }
-/** Browser-safe projection used to fold the bridge catalog into its upstream group. */
+export interface VisionBridgeProviderRouteView {
+    upstreamProvider: string;
+    models: VisionBridgeRoutingModelView[];
+}
+/** Browser-safe projection used to fold the bridge catalog into every upstream group. */
 export interface VisionBridgeRoutingView {
     bridgeProvider: string;
-    upstreamProvider: string;
     visionProvider?: {
         name: string;
         model: string;
     };
-    models: VisionBridgeRoutingModelView[];
+    routes: VisionBridgeProviderRouteView[];
 }
 export declare function isEmptyPayload(payload: unknown): boolean;
 export declare function parseAddProviderValue(payload: unknown): VisionAddProviderValue | undefined;

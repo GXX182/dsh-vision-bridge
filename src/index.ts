@@ -14,7 +14,7 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { DEFAULT_BRIDGE_PROVIDER, registerVisionBridgeAdapter } from './adapter.ts'
+import { bridgeModelIdFor, DEFAULT_BRIDGE_PROVIDER, registerVisionBridgeAdapter } from './adapter.ts'
 import {
   CONFIGURATION_CHANNEL,
   CONFIGURATION_ADD_ENDPOINT,
@@ -32,7 +32,12 @@ import {
   parseSetModelValue,
   profileView,
 } from './configuration.ts'
-import type { VisionConfigurationView, VisionProviderProfile, VisionProviderSettings } from './configuration.ts'
+import type {
+  VisionBridgeRoutingView,
+  VisionConfigurationView,
+  VisionProviderProfile,
+  VisionProviderSettings,
+} from './configuration.ts'
 import { maskCredentialValue } from './credential-mask.ts'
 import { registerVisionBridgeTool } from './tool.ts'
 import type { Config as VisionBridgeConfig, ResolvedConfig } from './types.ts'
@@ -43,7 +48,14 @@ export type { VisionAnalysis, VisionApiFormat, VisionUsage } from './types.ts'
 export type Config = VisionBridgeConfig
 export { VisionBridgeError } from './errors.ts'
 export { TOOL_NAME } from './tool.ts'
-export { DEFAULT_BRIDGE_PROVIDER, VisionBridgeAdapter, bridgeMessages } from './adapter.ts'
+export {
+  bridgeMessages,
+  bridgeModelIdFor,
+  DEFAULT_BRIDGE_PROVIDER,
+  resolveBridgeModelRoute,
+  routedBridgeModelId,
+  VisionBridgeAdapter,
+} from './adapter.ts'
 export { maskCredentialValue } from './credential-mask.ts'
 export { detectVisionApiFormat, resolveVisionApiFormat } from './provider.ts'
 
@@ -214,6 +226,42 @@ async function configurationView(ctx: Context, settings: VisionProviderSettings)
   }
 }
 
+async function bridgeRoutingView(
+  ctx: Context,
+  settings: VisionProviderSettings,
+  coreConfig: ResolvedConfig,
+): Promise<VisionBridgeRoutingView> {
+  const bridgeModels = new Set(settings.bridgeModels)
+  const visionProvider = settings.providers.find(provider => provider.id === settings.activeProviderId)
+  const upstreams = ctx.llm.listProviders().filter(provider => provider.id !== coreConfig.bridgeProvider)
+  const directories = await Promise.allSettled(upstreams.map(async (provider) => ({
+    provider,
+    models: await ctx.llm.listModels(provider.id),
+  })))
+  return {
+    bridgeProvider: coreConfig.bridgeProvider,
+    ...visionProvider === undefined ? {} : {
+      visionProvider: { name: visionProvider.name, model: visionProvider.model },
+    },
+    routes: directories.flatMap((result) => {
+      if (result.status === 'rejected') return []
+      const { provider, models } = result.value
+      return [{
+        upstreamProvider: provider.id,
+        models: models.map(model => ({
+          id: model.id,
+          bridgeModelId: bridgeModelIdFor(provider.id, model.id, coreConfig.upstreamProvider),
+          nativeVision: model.inputModalities === undefined
+            ? 'unknown' as const
+            : model.inputModalities.includes('image') ? 'native' as const : 'unsupported' as const,
+          // Persisted v1 preferences belong to the legacy default provider only.
+          bridgeEnabled: provider.id === coreConfig.upstreamProvider && bridgeModels.has(model.id),
+        })),
+      }]
+    }),
+  }
+}
+
 function registerConfigurationChannel(
   ctx: Context,
   resolveSettings: () => VisionProviderSettings,
@@ -292,27 +340,7 @@ function registerConfigurationChannel(
         }
       }
       try {
-        const models = await ctx.llm.listModels(coreConfig.upstreamProvider)
-        const settings = resolveSettings()
-        const bridgeModels = new Set(settings.bridgeModels)
-        const visionProvider = settings.providers.find(provider => provider.id === settings.activeProviderId)
-        return {
-          ok: true,
-          value: {
-            bridgeProvider: coreConfig.bridgeProvider,
-            upstreamProvider: coreConfig.upstreamProvider,
-            ...visionProvider === undefined ? {} : {
-              visionProvider: { name: visionProvider.name, model: visionProvider.model },
-            },
-            models: models.map(model => ({
-              id: model.id,
-              nativeVision: model.inputModalities === undefined
-                ? 'unknown'
-                : model.inputModalities.includes('image') ? 'native' : 'unsupported',
-              bridgeEnabled: bridgeModels.has(model.id),
-            })),
-          },
-        }
+        return { ok: true, value: await bridgeRoutingView(ctx, resolveSettings(), coreConfig) }
       } catch {
         return {
           ok: false,
@@ -451,25 +479,9 @@ function registerConfigurationChannel(
         : current.bridgeModels.filter(model => model !== value.model)
       try {
         await settingsProvider.update(VISION_BRIDGE_SETTINGS_NAMESPACE, { bridgeModels })
-        const models = await ctx.llm.listModels(coreConfig.upstreamProvider)
-        const enabled = new Set(bridgeModels)
-        const visionProvider = current.providers.find(provider => provider.id === current.activeProviderId)
         return {
           ok: true,
-          value: {
-            bridgeProvider: coreConfig.bridgeProvider,
-            upstreamProvider: coreConfig.upstreamProvider,
-            ...visionProvider === undefined ? {} : {
-              visionProvider: { name: visionProvider.name, model: visionProvider.model },
-            },
-            models: models.map(model => ({
-              id: model.id,
-              nativeVision: model.inputModalities === undefined
-                ? 'unknown'
-                : model.inputModalities.includes('image') ? 'native' : 'unsupported',
-              bridgeEnabled: enabled.has(model.id),
-            })),
-          },
+          value: await bridgeRoutingView(ctx, { ...current, bridgeModels }, coreConfig),
         }
       } catch {
         return {

@@ -1,6 +1,7 @@
 /** Image-admitting provider route that delegates text-only requests upstream. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { Buffer } from 'node:buffer'
 import {
   freezeMessage,
   LlmAdapter,
@@ -16,10 +17,46 @@ import type {
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 
-/** Default route selected when users want DeepSeek plus session-backed vision. */
+/** Shared hidden route selected when users enable session-backed vision. */
 export const DEFAULT_BRIDGE_PROVIDER = 'deepseek-vision-bridge'
 
 const IMAGE_PLACEHOLDER_TAG = 'vision-bridge-image'
+const ROUTED_MODEL_PREFIX = 'vision-bridge-v1.'
+
+export interface VisionBridgeModelRoute {
+  upstreamProvider: string
+  model: string
+}
+
+/** Encode a provider/model pair into one opaque model id owned by the bridge route. */
+export function routedBridgeModelId(upstreamProvider: string, model: string): string {
+  return `${ROUTED_MODEL_PREFIX}${Buffer.from(JSON.stringify([upstreamProvider, model]), 'utf8').toString('base64url')}`
+}
+
+/** Decode a routed bridge model, falling back to the legacy single-upstream format. */
+export function resolveBridgeModelRoute(model: string, legacyUpstreamProvider: string): VisionBridgeModelRoute {
+  if (!model.startsWith(ROUTED_MODEL_PREFIX)) return { upstreamProvider: legacyUpstreamProvider, model }
+  try {
+    const value: unknown = JSON.parse(Buffer.from(model.slice(ROUTED_MODEL_PREFIX.length), 'base64url').toString('utf8'))
+    if (!Array.isArray(value) || value.length !== 2
+      || typeof value[0] !== 'string' || value[0].length === 0
+      || typeof value[1] !== 'string' || value[1].length === 0) {
+      throw new Error('invalid routed model')
+    }
+    return { upstreamProvider: value[0], model: value[1] }
+  } catch (error) {
+    throw new Error('vision-bridge: invalid routed model id', { cause: error })
+  }
+}
+
+/** Preserve legacy model ids for the configured default route and encode every other provider. */
+export function bridgeModelIdFor(
+  upstreamProvider: string,
+  model: string,
+  legacyUpstreamProvider: string,
+): string {
+  return upstreamProvider === legacyUpstreamProvider ? model : routedBridgeModelId(upstreamProvider, model)
+}
 
 function imageModalities(input: readonly ModelModality[] | undefined): ModelModality[] {
   return [...new Set<ModelModality>([...(input ?? ['text']), 'image'])]
@@ -68,12 +105,13 @@ export function bridgeMessages(messages: readonly Message[]): Message[] {
 /** Public configuration needed by the provider wrapper. */
 export interface VisionBridgeAdapterOptions {
   bridgeProvider: string
+  /** Legacy default retained for existing sessions and model selections. */
   upstreamProvider: string
 }
 
 /**
  * A Harness-native adapter route that accepts durable image messages while
- * forwarding a text-only projection to the configured upstream provider.
+ * forwarding a text-only projection to the model's original provider.
  */
 export class VisionBridgeAdapter extends LlmAdapter {
   constructor(
@@ -84,17 +122,35 @@ export class VisionBridgeAdapter extends LlmAdapter {
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: 'DeepSeek + Vision Bridge' }
+    return { id: provider, name: 'Vision Bridge' }
+  }
+
+  private routeFor(model: string): VisionBridgeModelRoute {
+    const route = resolveBridgeModelRoute(model, this.options.upstreamProvider)
+    if (route.upstreamProvider === this.options.bridgeProvider) {
+      throw new Error('vision-bridge: a routed model cannot target the bridge provider')
+    }
+    return route
   }
 
   override async listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    const models = await this.ctx.llm.listModels(this.options.upstreamProvider)
-    return models.map(model => ({
-      ...model,
-      provider,
-      name: `${model.name} (Vision Bridge)`,
-      inputModalities: imageModalities(model.inputModalities),
-    }))
+    const upstreams = this.ctx.llm.listProviders().filter(item => item.id !== this.options.bridgeProvider)
+    const directories = await Promise.allSettled(upstreams.map(async (upstream) => ({
+      upstream,
+      models: await this.ctx.llm.listModels(upstream.id),
+    })))
+    return directories.flatMap((result) => {
+      if (result.status === 'rejected') return []
+      const { upstream, models } = result.value
+      return models.map(model => ({
+        ...model,
+        provider,
+        id: bridgeModelIdFor(upstream.id, model.id, this.options.upstreamProvider),
+        name: `${model.name} (Vision Bridge)`,
+        description: model.description ?? upstream.name,
+        inputModalities: imageModalities(model.inputModalities),
+      }))
+    })
   }
 
   override async resolveModel(
@@ -102,19 +158,23 @@ export class VisionBridgeAdapter extends LlmAdapter {
     model: string,
     signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
-    const resolved = await this.ctx.llm.resolveModelInfo(this.options.upstreamProvider, model, signal)
+    const route = this.routeFor(model)
+    const resolved = await this.ctx.llm.resolveModelInfo(route.upstreamProvider, route.model, signal)
     return {
       ...resolved,
       provider,
+      id: model,
       name: `${resolved.name} (Vision Bridge)`,
       inputModalities: imageModalities(resolved.inputModalities),
     }
   }
 
   override stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const route = this.routeFor(options.model)
     return this.ctx.llm.stream({
       ...options,
-      provider: this.options.upstreamProvider,
+      provider: route.upstreamProvider,
+      model: route.model,
       messages: bridgeMessages(options.messages),
     })
   }
