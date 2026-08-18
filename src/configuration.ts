@@ -67,16 +67,22 @@ export type NativeVisionCapability = 'native' | 'unsupported' | 'unknown'
 
 export interface VisionBridgeRoutingModelView {
   id: string
+  /** Opaque model id exposed by the shared bridge provider route. */
+  bridgeModelId: string
   nativeVision: NativeVisionCapability
   bridgeEnabled: boolean
 }
 
-/** Browser-safe projection used to fold the bridge catalog into its upstream group. */
+export interface VisionBridgeProviderRouteView {
+  upstreamProvider: string
+  models: VisionBridgeRoutingModelView[]
+}
+
+/** Browser-safe projection used to fold the bridge catalog into every upstream group. */
 export interface VisionBridgeRoutingView {
   bridgeProvider: string
-  upstreamProvider: string
   visionProvider?: { name: string; model: string }
-  models: VisionBridgeRoutingModelView[]
+  routes: VisionBridgeProviderRouteView[]
 }
 
 const API_FORMATS = new Set<VisionApiFormat>([
@@ -228,36 +234,76 @@ export function parseModelsView(payload: unknown): VisionModelsView | undefined 
   return { models, resolvedApiFormat }
 }
 
-/** Strictly validate bridge routing metadata crossing into the browser. */
-export function parseBridgeRoutingView(payload: unknown): VisionBridgeRoutingView | undefined {
-  const record = exactRecord(payload, ['bridgeProvider', 'upstreamProvider', 'visionProvider', 'models'])
-  if (record === undefined || typeof record.bridgeProvider !== 'string'
-    || typeof record.upstreamProvider !== 'string' || !Array.isArray(record.models)
-    || record.bridgeProvider.length === 0 || record.upstreamProvider.length === 0
-    || record.models.length > 1_000) return undefined
+function parseRoutingModels(payload: unknown, legacy = false): VisionBridgeRoutingModelView[] | undefined {
+  if (!Array.isArray(payload) || payload.length > 1_000) return undefined
   const models: VisionBridgeRoutingModelView[] = []
-  for (const item of record.models) {
-    const model = exactRecord(item, ['id', 'nativeVision', 'bridgeEnabled'])
+  for (const item of payload) {
+    const model = exactRecord(item, legacy
+      ? ['id', 'nativeVision', 'bridgeEnabled']
+      : ['id', 'bridgeModelId', 'nativeVision', 'bridgeEnabled'])
     if (model === undefined || typeof model.id !== 'string' || model.id.length === 0
+      || (!legacy && (typeof model.bridgeModelId !== 'string' || model.bridgeModelId.length === 0))
       || typeof model.bridgeEnabled !== 'boolean'
       || (model.nativeVision !== 'native' && model.nativeVision !== 'unsupported'
         && model.nativeVision !== 'unknown')) return undefined
-    models.push({ id: model.id, nativeVision: model.nativeVision, bridgeEnabled: model.bridgeEnabled })
+    models.push({
+      id: model.id,
+      bridgeModelId: legacy ? model.id : model.bridgeModelId as string,
+      nativeVision: model.nativeVision,
+      bridgeEnabled: model.bridgeEnabled,
+    })
   }
-  const visionProvider = record.visionProvider === undefined
-    ? undefined
-    : exactRecord(record.visionProvider, ['name', 'model'])
-  if (visionProvider !== undefined && (typeof visionProvider.name !== 'string'
+  return models
+}
+
+function parseRoutingVisionProvider(payload: unknown): { name: string; model: string } | undefined | false {
+  if (payload === undefined) return undefined
+  const visionProvider = exactRecord(payload, ['name', 'model'])
+  if (visionProvider === undefined || typeof visionProvider.name !== 'string'
     || visionProvider.name.length === 0 || visionProvider.name.length > 80
     || typeof visionProvider.model !== 'string' || visionProvider.model.length === 0
-    || visionProvider.model.length > 300)) return undefined
-  if (record.visionProvider !== undefined && visionProvider === undefined) return undefined
+    || visionProvider.model.length > 300) return false
+  return { name: visionProvider.name, model: visionProvider.model }
+}
+
+/** Strictly validate bridge routing metadata crossing into the browser. */
+export function parseBridgeRoutingView(payload: unknown): VisionBridgeRoutingView | undefined {
+  const modern = exactRecord(payload, ['bridgeProvider', 'visionProvider', 'routes'])
+  if (modern !== undefined) {
+    if (typeof modern.bridgeProvider !== 'string' || modern.bridgeProvider.length === 0
+      || !Array.isArray(modern.routes) || modern.routes.length > 100) return undefined
+    const routes: VisionBridgeProviderRouteView[] = []
+    const upstreams = new Set<string>()
+    for (const item of modern.routes) {
+      const route = exactRecord(item, ['upstreamProvider', 'models'])
+      if (route === undefined || typeof route.upstreamProvider !== 'string'
+        || route.upstreamProvider.length === 0 || upstreams.has(route.upstreamProvider)) return undefined
+      const models = parseRoutingModels(route.models)
+      if (models === undefined) return undefined
+      upstreams.add(route.upstreamProvider)
+      routes.push({ upstreamProvider: route.upstreamProvider, models })
+    }
+    const visionProvider = parseRoutingVisionProvider(modern.visionProvider)
+    if (visionProvider === false) return undefined
+    return {
+      bridgeProvider: modern.bridgeProvider,
+      ...visionProvider === undefined ? {} : { visionProvider },
+      routes,
+    }
+  }
+
+  // Accept the v1 single-upstream response so mixed-version Host/client bundles fail gracefully.
+  const legacy = exactRecord(payload, ['bridgeProvider', 'upstreamProvider', 'visionProvider', 'models'])
+  if (legacy === undefined || typeof legacy.bridgeProvider !== 'string'
+    || typeof legacy.upstreamProvider !== 'string' || legacy.bridgeProvider.length === 0
+    || legacy.upstreamProvider.length === 0) return undefined
+  const models = parseRoutingModels(legacy.models, true)
+  if (models === undefined) return undefined
+  const visionProvider = parseRoutingVisionProvider(legacy.visionProvider)
+  if (visionProvider === false) return undefined
   return {
-    bridgeProvider: record.bridgeProvider,
-    upstreamProvider: record.upstreamProvider,
-    ...visionProvider === undefined ? {} : {
-      visionProvider: { name: visionProvider.name as string, model: visionProvider.model as string },
-    },
-    models,
+    bridgeProvider: legacy.bridgeProvider,
+    ...visionProvider === undefined ? {} : { visionProvider },
+    routes: [{ upstreamProvider: legacy.upstreamProvider, models }],
   }
 }

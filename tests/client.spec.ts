@@ -3,6 +3,7 @@ import {
   apply,
   foldBridgeModelGroups,
   isVisionBridgeModelChange,
+  logicalModelSelection,
   normalizeGoogleApiKey,
   providerForModelPreference,
   withBridgePreferences,
@@ -69,7 +70,7 @@ describe('Vision Bridge client credential controls', () => {
     })).toBeUndefined()
   })
 
-  it('folds the bridge catalog into glasses controls on the upstream rows', () => {
+  it('folds one bridge catalog into glasses controls across every upstream group', () => {
     const groups = foldBridgeModelGroups([
       {
         id: 'deepseek-official',
@@ -80,23 +81,44 @@ describe('Vision Bridge client credential controls', () => {
         ],
       },
       {
+        id: 'teamrouter',
+        name: 'teamrouter',
+        models: [
+          { id: 'claude', name: 'Claude' },
+          { id: 'claude-vision', name: 'Claude Vision' },
+        ],
+      },
+      {
         id: 'deepseek-vision-bridge',
-        name: 'DeepSeek + Vision Bridge',
+        name: 'Vision Bridge',
         models: [
           { id: 'flash', name: 'Flash (Vision Bridge)' },
           { id: 'native', name: 'Native Vision (Vision Bridge)' },
+          { id: 'routed-claude', name: 'Claude (Vision Bridge)' },
+          { id: 'routed-claude-vision', name: 'Claude Vision (Vision Bridge)' },
         ],
       },
     ], {
       bridgeProvider: 'deepseek-vision-bridge',
-      upstreamProvider: 'deepseek-official',
-      models: [
-        { id: 'flash', nativeVision: 'unsupported', bridgeEnabled: true },
-        { id: 'native', nativeVision: 'native', bridgeEnabled: false },
+      routes: [
+        {
+          upstreamProvider: 'deepseek-official',
+          models: [
+            { id: 'flash', bridgeModelId: 'flash', nativeVision: 'unsupported', bridgeEnabled: true },
+            { id: 'native', bridgeModelId: 'native', nativeVision: 'native', bridgeEnabled: false },
+          ],
+        },
+        {
+          upstreamProvider: 'teamrouter',
+          models: [
+            { id: 'claude', bridgeModelId: 'routed-claude', nativeVision: 'unknown', bridgeEnabled: true },
+            { id: 'claude-vision', bridgeModelId: 'routed-claude-vision', nativeVision: 'native', bridgeEnabled: false },
+          ],
+        },
       ],
     })
 
-    expect(groups).toHaveLength(1)
+    expect(groups).toHaveLength(2)
     expect(groups[0]?.name).toBe('DeepSeek')
     expect(groups[0]?.models[0]).toMatchObject({
       id: 'flash',
@@ -106,37 +128,65 @@ describe('Vision Bridge client credential controls', () => {
       bridgeModel: { id: 'flash' },
     })
     expect(groups[0]?.models[1]).toMatchObject({ nativeVision: 'native' })
+    expect(groups[1]?.models[0]).toMatchObject({
+      id: 'claude',
+      nativeVision: 'unknown',
+      bridgeEnabled: true,
+      bridgeModel: { id: 'routed-claude' },
+    })
+    expect(groups[1]?.models[1]).toMatchObject({ nativeVision: 'native' })
     expect(providerForModelPreference('deepseek-official', groups[0]!.models[0]!, {
       bridgeProvider: 'deepseek-vision-bridge',
-      upstreamProvider: 'deepseek-official',
-      models: [],
+      routes: [{ upstreamProvider: 'deepseek-official', models: [] }],
     })).toBe('deepseek-vision-bridge')
-    expect(providerForModelPreference('deepseek-official', groups[0]!.models[1]!, {
+    expect(providerForModelPreference('teamrouter', groups[1]!.models[0]!, {
       bridgeProvider: 'deepseek-vision-bridge',
-      upstreamProvider: 'deepseek-official',
-      models: [],
-    })).toBe('deepseek-official')
+      routes: [{ upstreamProvider: 'teamrouter', models: [] }],
+    })).toBe('deepseek-vision-bridge')
+    expect(logicalModelSelection({ provider: 'deepseek-vision-bridge', model: 'routed-claude' }, {
+      bridgeProvider: 'deepseek-vision-bridge',
+      routes: [{
+        upstreamProvider: 'teamrouter',
+        models: [{
+          id: 'claude', bridgeModelId: 'routed-claude', nativeVision: 'unknown', bridgeEnabled: true,
+        }],
+      }],
+    })).toEqual({ provider: 'teamrouter', model: 'claude', bridge: true })
   })
 
   it('overlays local glasses preferences without changing routing metadata', () => {
     const routing = withBridgePreferences({
       bridgeProvider: 'deepseek-vision-bridge',
-      upstreamProvider: 'deepseek-official',
       visionProvider: { name: 'Google Gemini', model: 'gemini-3.6-flash' },
-      models: [
-        { id: 'flash', nativeVision: 'unsupported', bridgeEnabled: false },
-        { id: 'pro', nativeVision: 'unsupported', bridgeEnabled: true },
-      ],
-    }, ['flash'])
+      routes: [{
+        upstreamProvider: 'deepseek-official',
+        models: [
+          { id: 'flash', bridgeModelId: 'flash', nativeVision: 'unsupported', bridgeEnabled: false },
+          { id: 'pro', bridgeModelId: 'pro', nativeVision: 'unsupported', bridgeEnabled: true },
+        ],
+      }, {
+        upstreamProvider: 'teamrouter',
+        models: [
+          { id: 'flash', bridgeModelId: 'routed-flash', nativeVision: 'unknown', bridgeEnabled: true },
+        ],
+      }],
+    }, 'deepseek-official', ['flash'])
 
     expect(routing).toEqual({
       bridgeProvider: 'deepseek-vision-bridge',
-      upstreamProvider: 'deepseek-official',
       visionProvider: { name: 'Google Gemini', model: 'gemini-3.6-flash' },
-      models: [
-        { id: 'flash', nativeVision: 'unsupported', bridgeEnabled: true },
-        { id: 'pro', nativeVision: 'unsupported', bridgeEnabled: false },
-      ],
+      routes: [{
+        upstreamProvider: 'deepseek-official',
+        models: [
+          { id: 'flash', bridgeModelId: 'flash', nativeVision: 'unsupported', bridgeEnabled: true },
+          { id: 'pro', bridgeModelId: 'pro', nativeVision: 'unsupported', bridgeEnabled: false },
+        ],
+      }, {
+        upstreamProvider: 'teamrouter',
+        models: [
+          { id: 'flash', bridgeModelId: 'routed-flash', nativeVision: 'unknown', bridgeEnabled: true },
+        ],
+      }],
     })
   })
 })

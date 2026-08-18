@@ -78,19 +78,41 @@ describe('multi-provider vision configuration', () => {
   it('accepts only the browser-safe bridge routing projection', () => {
     const view = {
       bridgeProvider: 'deepseek-vision-bridge',
-      upstreamProvider: 'deepseek-official',
       visionProvider: { name: 'Google Gemini', model: 'gemini-3.6-flash' },
-      models: [
-        { id: 'text-model', nativeVision: 'unsupported', bridgeEnabled: true },
-        { id: 'vision-model', nativeVision: 'native', bridgeEnabled: false },
-        { id: 'relay-model', nativeVision: 'unknown', bridgeEnabled: false },
-      ],
+      routes: [{
+        upstreamProvider: 'deepseek-official',
+        models: [
+          { id: 'text-model', bridgeModelId: 'text-model', nativeVision: 'unsupported', bridgeEnabled: true },
+          { id: 'vision-model', bridgeModelId: 'vision-model', nativeVision: 'native', bridgeEnabled: false },
+        ],
+      }, {
+        upstreamProvider: 'teamrouter',
+        models: [{
+          id: 'relay-model', bridgeModelId: 'routed-relay-model', nativeVision: 'unknown', bridgeEnabled: false,
+        }],
+      }],
     }
     expect(parseBridgeRoutingView(view)).toEqual(view)
     expect(parseBridgeRoutingView({ ...view, apiKey: 'must-not-cross-the-wire' })).toBeUndefined()
     expect(parseBridgeRoutingView({
       ...view,
-      models: [{ id: 'text-model', nativeVision: 'guessed', bridgeEnabled: false }],
+      routes: [{
+        upstreamProvider: 'deepseek-official',
+        models: [{ id: 'text-model', bridgeModelId: 'text-model', nativeVision: 'guessed', bridgeEnabled: false }],
+      }],
     })).toBeUndefined()
+    expect(parseBridgeRoutingView({
+      bridgeProvider: 'deepseek-vision-bridge',
+      upstreamProvider: 'deepseek-official',
+      models: [{ id: 'text-model', nativeVision: 'unsupported', bridgeEnabled: true }],
+    })).toEqual({
+      bridgeProvider: 'deepseek-vision-bridge',
+      routes: [{
+        upstreamProvider: 'deepseek-official',
+        models: [{
+          id: 'text-model', bridgeModelId: 'text-model', nativeVision: 'unsupported', bridgeEnabled: true,
+        }],
+      }],
+    })
   })
 })

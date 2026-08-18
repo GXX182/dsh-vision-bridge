@@ -12,7 +12,7 @@ export type { VisionAnalysis, VisionApiFormat, VisionUsage } from './types.ts';
 export type Config = VisionBridgeConfig;
 export { VisionBridgeError } from './errors.ts';
 export { TOOL_NAME } from './tool.ts';
-export { DEFAULT_BRIDGE_PROVIDER, VisionBridgeAdapter, bridgeMessages } from './adapter.ts';
+export { bridgeMessages, bridgeModelIdFor, DEFAULT_BRIDGE_PROVIDER, resolveBridgeModelRoute, routedBridgeModelId, VisionBridgeAdapter, } from './adapter.ts';
 export { maskCredentialValue } from './credential-mask.ts';
 export { detectVisionApiFormat, resolveVisionApiFormat } from './provider.ts';
 type HostRpcResult = {

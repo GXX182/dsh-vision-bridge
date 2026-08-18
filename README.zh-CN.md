@@ -23,6 +23,7 @@
 ## 功能亮点
 
 - **一个模型列表：** 不再显示重复的 `DeepSeek + Vision Bridge` Provider 分组。
+- **覆盖所有 Provider 分组：** 自动发现全部已注册 Provider；纯文本模型和图片能力未知的模型都会获得独立的桥接开关。
 - **逐模型眼镜开关：** 灰色表示关闭视觉桥接，蓝色表示开启。
 - **选择操作保持明确：** 点击眼镜只修改开关；点击模型名称才会真正选择模型并应用开关状态。
 - **长期记忆且不打断：** 开关状态保存在 Harness 网页客户端，不会触发模型切换或模型列表刷新。
@@ -41,7 +42,7 @@
 | 点击模型名称或模型行 | 选择模型；蓝色时走视觉桥接，灰色时走普通上游路由。 |
 | 悬停眼镜             | 显示负责图片理解的视觉 Provider 和模型。           |
 
-只有在存在对应桥接路由，并且上游模型是纯文本或图片能力未知时，才会显示眼镜。开关偏好按上游模型保存在本地 Harness 客户端中。
+每个 Provider 分组中的纯文本模型或图片能力未知模型都会显示眼镜。开关偏好按 Provider/模型组合保存在本地 Harness 客户端中，因此不同 Provider 下的同名模型互不影响。
 
 ## 工作原理
 
@@ -73,7 +74,7 @@
 dsh plugin --profile web add "github:GXX182/dsh-vision-bridge#semver:*"
 ```
 
-`#semver:*` 会选择 GitHub 上符合语义化版本的最新标签。需要可复现安装时，请固定具体标签，例如 `#v0.2.0`。
+`#semver:*` 会选择 GitHub 上符合语义化版本的最新标签。需要可复现安装时，请固定具体标签，例如 `#v0.2.2`。
 
 如果使用 `npx` 启动 Harness：
 
@@ -131,7 +132,7 @@ dsh --profile web
 
 ## 高级 bundle 配置
 
-默认 schema 无需修改即可使用。如果需要覆盖，请在 profile 的 `cordis.patch.yml` 中完整替换该插件行的 `config`：
+默认 schema 无需修改即可使用。`upstreamProvider` 现在只作为兼容旧模型 ID 和既有会话的默认路由；插件会自动发现全部已注册 Provider。如果需要覆盖默认值，请在 profile 的 `cordis.patch.yml` 中完整替换该插件行的 `config`：
 
 ```yaml
 - id: vision-bridge

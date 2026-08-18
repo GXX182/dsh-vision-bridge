@@ -27,6 +27,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run verify
+      - run: mkdir -p dist
       - run: npm pack --pack-destination dist
       - uses: softprops/action-gh-release@v2
         with:
