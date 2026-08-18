@@ -119,6 +119,7 @@ interface CredentialCardProps {
 interface SlotRegistration<T> {
   name: string
   id?: string
+  key?: string
   order?: number
   priority?: number
   inject: (() => T) | ((sessionId: string) => T)
@@ -1495,7 +1496,7 @@ export function apply(ctx: Context): void {
     }, VisionBridgeRouteCredentialDialog))
   client.slots.inject('settings.plugin.item', () => client.slots.register({
       name: 'settings.plugin.item',
-      id: 'vision-bridge-providers',
+      key: 'vision-bridge',
       order: 30,
       inject: (): CredentialCardProps => ({ rpc: connection.rpc }),
     }, VisionBridgeCredentialCard))

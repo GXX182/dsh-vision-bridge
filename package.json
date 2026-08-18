@@ -1,6 +1,6 @@
 {
   "name": "dsh-vision-bridge",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek Harness plugin that bridges images to external vision APIs and returns text-only analysis",
   "type": "module",
   "main": "lib/index.js",

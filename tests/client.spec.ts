@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  apply,
   foldBridgeModelGroups,
   isVisionBridgeModelChange,
   normalizeGoogleApiKey,
@@ -9,6 +10,30 @@ import {
 import { maskCredentialValue, parseCredentialMaskView } from '../src/credential-mask.ts'
 
 describe('Vision Bridge client credential controls', () => {
+  it('registers its settings card under the Host settings namespace key', () => {
+    const registrations: Array<{ name: string; key?: string; id?: string }> = []
+    const slots = {
+      inject: (_name: string, register: () => void) => { register() },
+      register: (options: { name: string; key?: string; id?: string }) => {
+        registrations.push(options)
+        return () => {}
+      },
+    }
+    const services = {
+      connection: { rpc: {} },
+      sessions: { list: {} },
+      modelDirectories: {},
+    }
+    apply({
+      slots,
+      get: (name: keyof typeof services) => services[name],
+    } as never)
+
+    expect(registrations.find(item => item.name === 'settings.plugin.item')).toMatchObject({
+      key: 'vision-bridge',
+    })
+  })
+
   it('normalizes a pasted API key without accepting blanks or embedded whitespace', () => {
     expect(normalizeGoogleApiKey('  AQ.example-key_1  ')).toEqual({ value: 'AQ.example-key_1' })
     expect(normalizeGoogleApiKey('   ')).toEqual({ error: 'required' })
